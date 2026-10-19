@@ -339,6 +339,7 @@ nav.tabs button[aria-selected="true"] { color: #04110A; background: linear-gradi
     <div>
       <h2>Weekly training plan</h2>
       <div class="list" id="planEdit"></div>
+      <div class="small" id="planMsg" style="margin:8px 2px 0;color:var(--accent);font-weight:600" hidden></div>
       <p class="muted small" style="margin:8px 2px 0">Rest days tick the exercise goal for you. Bowl days show that week's session from your fast bowling program. Keep 2–3 days between bowl days and never bowl on back-to-back days.</p>
     </div>
   </section>
@@ -436,6 +437,13 @@ nav.tabs button[aria-selected="true"] { color: #04110A; background: linear-gradi
   function fmtDate(k, long) { return parseKey(k).toLocaleDateString(undefined, long ? { weekday: "long", day: "numeric", month: "short" } : { day: "numeric", month: "short" }); }
 
   /* ---------- goals ---------- */
+  // The program allows 2 bowling sessions a week, never on back-to-back days (Sun to Mon counts).
+  const MAX_BOWL_DAYS = 2;
+  function bowlProblem(plan) {
+    if (plan.filter(p => p.bowl).length > MAX_BOWL_DAYS) return "Your program allows " + MAX_BOWL_DAYS + " bowl days a week. Untick one first.";
+    if (plan.some((p, i) => p.bowl && plan[(i + 1) % 7].bowl)) return "No bowling on back-to-back days. Leave at least a day between.";
+    return null;
+  }
   function planFor(k) {
     if ((state.days[k] || {}).game) return { title: "Cricket game", rest: false, bowl: true, game: true };
     const p = state.settings.plan[dow(k)] || DEFAULT_SETTINGS.plan[dow(k)]; return { title: p.title || "Training", rest: !!p.rest, bowl: !!p.bowl };
@@ -739,7 +747,13 @@ nav.tabs button[aria-selected="true"] { color: #04110A; background: linear-gradi
       ti.value = p.title; rc.checked = !!p.rest; bc.checked = !!p.bowl;
       ti.addEventListener("input", () => { state.settings.plan[i].title = ti.value; persist("settings"); });
       rc.addEventListener("change", () => { state.settings.plan[i].rest = rc.checked; persist("settings"); });
-      bc.addEventListener("change", () => { state.settings.plan[i].bowl = bc.checked; persist("settings"); });
+      bc.addEventListener("change", () => {
+        const next = state.settings.plan.map((q, j) => j === i ? Object.assign({}, q, { bowl: bc.checked }) : q);
+        const why = bc.checked ? bowlProblem(next) : null;
+        $("planMsg").hidden = !why; $("planMsg").textContent = why || "";
+        if (why) { bc.checked = false; return; }
+        state.settings.plan[i].bowl = bc.checked; persist("settings");
+      });
     });
   }
 
@@ -811,11 +825,13 @@ nav.tabs button[aria-selected="true"] { color: #04110A; background: linear-gradi
       games.forEach(g => { const d = day(g.date); if (g.on === false) delete d.game; else d.game = true; persist(g.date); });
       if (!plan && games.length) { msg.textContent = r.summary || "Game added."; $("askInput").value = ""; }
       else if (!plan) msg.textContent = (r && r.summary) || "I couldn't work that out. Try something like \"bowl Tuesday and Saturday\".";
+      else if (bowlProblem(plan.map(p => ({ bowl: !!(p && p.bowl) && !(p && p.rest) })))) {
+        msg.textContent = "Can't do that one. " + bowlProblem(plan.map(p => ({ bowl: !!(p && p.bowl) && !(p && p.rest) }))).replace(" Untick one first.", "");
+      }
       else {
         state.settings.plan = plan.map((p, i) => ({ title: String(p && p.title || state.settings.plan[i].title).slice(0, 40), rest: !!(p && p.rest), bowl: !!(p && p.bowl) && !(p && p.rest) }));
         persist("settings");
-        const bowls = state.settings.plan.filter(p => p.bowl).length, back = state.settings.plan.some((p, i) => p.bowl && state.settings.plan[(i + 1) % 7].bowl);
-        msg.textContent = (r.summary || "Plan updated.") + (back ? " Heads up: that has you bowling on back-to-back days." : bowls > 3 ? " Heads up: that's a lot of bowl days." : "");
+        msg.textContent = r.summary || "Plan updated.";
         $("askInput").value = "";
         delete $("planEdit").dataset.built;
       }
