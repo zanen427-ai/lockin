@@ -415,7 +415,7 @@ nav.tabs button[aria-selected="true"] { color: #04110A; background: linear-gradi
   const GOALS = [
     { id: "steps", title: "10,000 steps", sub: () => "Get moving" },
     { id: "exercise", title: "45 min exercise", sub: k => { const p = planFor(k); if (!p.bowl) return p.title; if (p.game) return "Cricket game, counts as your session"; const b = bowlInfo(k); return p.title + (b.restUntil ? " · no bowling, resting" : b.inSeason ? " · in-season bowling" : " · bowl " + b.balls + " balls at " + b.pace); } },
-    { id: "water", title: "2.5 L water", sub: () => "About 10 glasses" },
+    { id: "water", title: "2.5 L water", sub: k => { const g = (state.days[k] || {}).glasses || 0; return g ? g + " of 10 glasses · " + (g * 0.25).toFixed(2).replace(/0$/, "") + " L" : "10 glasses of 250 ml"; } },
     { id: "food", title: "Under calorie budget", sub: () => "Check Cal AI" }
   ];
   const TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" style="color:#06140C"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -568,6 +568,7 @@ nav.tabs button[aria-selected="true"] { color: #04110A; background: linear-gradi
       b.querySelector(".txt span").textContent = upcoming ? g.sub(k) : auto ? "Rest day, ticked for you" : g.sub(k);
       if (!auto) b.onclick = () => { day(k)[g.id] = !done(k, g.id); if (g.id === "exercise") delete day(k).session; persist(k); render(); };
       box.appendChild(b);
+      if (g.id === "water" && !upcoming) box.appendChild(waterRow(k));
       if (g.id === "food" && shotReady && !upcoming) box.appendChild(shotRow(k));
     });
     const s = upcoming ? 0 : score(k);
@@ -755,6 +756,20 @@ nav.tabs button[aria-selected="true"] { color: #04110A; background: linear-gradi
         state.settings.plan[i].bowl = bc.checked; persist("settings");
       });
     });
+  }
+
+  /* ---------- water: one tap per 250 ml glass, 10 glasses ticks the goal ---------- */
+  function waterRow(k) {
+    const wrap = document.createElement("div"); wrap.className = "shot";
+    const g = (state.days[k] || {}).glasses || 0;
+    wrap.innerHTML = '<span class="hint"></span><span style="display:flex;gap:8px"><button class="shotbtn" aria-label="Remove a glass">−</button><button class="shotbtn">💧 + Glass</button></span>';
+    wrap.querySelector(".hint").textContent = g >= 10 ? "Target hit. Keep sipping." : (10 - g) + " to go";
+    const [minus, plus] = wrap.querySelectorAll("button");
+    minus.disabled = !g;
+    const set = n => { const d = day(k); d.glasses = Math.max(0, n); if (d.glasses >= 10) d.water = true; else if (n < g && g >= 10) d.water = false; persist(k); render(); };
+    plus.onclick = () => set(g + 1);
+    minus.onclick = () => set(g - 1);
+    return wrap;
   }
 
   /* ---------- Cal AI screenshot: ticks "under budget" for you ---------- */
